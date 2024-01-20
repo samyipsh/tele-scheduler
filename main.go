@@ -56,19 +56,7 @@ func getHello(w http.ResponseWriter, r *http.Request) {
 
 // Retrieve Cloud credentials stored in SecretManager or default to environment variables.
 // Returns: Credentials struct with non-empty username and password
-// TODO: get secrets even in local dev: https://cloud.google.com/secret-manager/docs/samples/secretmanager-get-secret?hl=en#secretmanager_get_secret-go 
 func get_cred_config() Credentials {
-	// credentialsJSON := os.Getenv("CLOUD_SQL_CREDENTIALS_SECRET")
-	// if credentialsJSON != "" {
-	// 	log.Printf("Using CLOUD_SQL_CREDENTIALS_SECRET")
-	// 	var credentials Credentials
-	// 	err := json.Unmarshal([]byte(credentialsJSON), &credentials)
-	// 	if err != nil {
-	// 		log.Fatalf("Unable to parse CLOUD_SQL_CREDENTIALS_SECRET: %v", err)
-	// 	}
-	// 	return credentials
-	// }
-
 	log.Printf("Using environment variables to get credentials")
 	username := os.Getenv("AUTH_USERNAME")
 	if username == "" {
@@ -82,52 +70,55 @@ func get_cred_config() Credentials {
 }
 
 func main() {
-		app := new(application)
-        log.Print("starting server...")
+	isProductionEnv := os.Getenv("PORT") != ""
+	if isProductionEnv {
+		log.Printf("--starting Production Development Environment--")
+	} else {
+		log.Printf("--starting Local Development Environment--")
+		os.Setenv("AUTH_USERNAME", "admin")
+		os.Setenv("AUTH_PASSWORD", "fake_password")
+		// if err := godotenv.Load(".env"); err != nil {
+		// 	log.Print("No .env file found in local development environment")
+		// }
+	}
 
-		isProductionEnv := os.Getenv("PORT") != ""
-		log.Printf("isProductionEnv: %t", isProductionEnv)
+	app := new(application)
+	log.Print("starting server...")
 
-		// Determine port for HTTP service.
-		port := os.Getenv("PORT")
-		if port == "" {
-			port = defaultHTTPport
-			log.Printf("defaulting to port %s", port)
-		}
+	// Determine port for HTTP service.
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = defaultHTTPport
+		log.Printf("defaulting to port %s", port)
+	}
+	log.Printf("listening on port %s", port)
 
-		credentials := get_cred_config()
-		app.auth.username = credentials.Username
-		app.auth.password = credentials.Password
+	credentials := get_cred_config()
+	app.auth.username = credentials.Username
+	app.auth.password = credentials.Password
 
-		// create your own http.Handler
-		mux := http.NewServeMux()
-		mux.HandleFunc("/", getRoot)
-		mux.HandleFunc("/hello", app.basicAuth(getHello))
+	// create your own http.Handler
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", getRoot)
+	mux.HandleFunc("/hello", app.basicAuth(getHello))
 
-		ctx := context.Background()
-		server := &http.Server{
-			Addr: ":" + port,
-			Handler: mux,
-			BaseContext: func(l net.Listener) context.Context {
-				ctx = context.WithValue(ctx, keyServerAddr, l.Addr().String())
-				return ctx
-			},
-		}
-
-        log.Printf("listening on port %s", port)
-		if isProductionEnv {
-			log.Printf("starting production server...\n")
-		} else {
-			log.Printf("starting local dev server...\n")
-		}
-			
-		// Start HTTP server.
-		err := server.ListenAndServeTLS("./localhost.pem", "./localhost-key.pem");
-		if errors.Is(err, http.ErrServerClosed) {
-			log.Printf("server closed\n")
-		} else if err != nil {
-			log.Fatal(err)
-		}
+	ctx := context.Background()
+	server := &http.Server{
+		Addr: ":" + port,
+		Handler: mux,
+		BaseContext: func(l net.Listener) context.Context {
+			ctx = context.WithValue(ctx, keyServerAddr, l.Addr().String())
+			return ctx
+		},
+	}
+		
+	// Start HTTPS server
+	err := server.ListenAndServeTLS("./localhost.pem", "./localhost-key.pem");
+	if errors.Is(err, http.ErrServerClosed) {
+		log.Printf("server closed\n")
+	} else if err != nil {
+		log.Fatal(err)
+	}
 }
 
 func (app *application) basicAuth(next http.HandlerFunc) http.HandlerFunc {
@@ -152,38 +143,3 @@ func (app *application) basicAuth(next http.HandlerFunc) http.HandlerFunc {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 	})
 }
-
-// package main
-
-// import (
-// 	"fmt"
-// 	"log"
-// 	"net/http"
-// 	"os"
-// )
-
-// func main() {
-//         log.Print("starting server...")
-//         http.HandleFunc("/", handler)
-
-//         // Determine port for HTTP service.
-//         port := os.Getenv("PORT")
-//         if port == "" {
-//                 port = "8080"
-//                 log.Printf("defaulting to port %s", port)
-//         }
-
-//         // Start HTTP server.
-//         log.Printf("listening on port %s", port)
-//         if err := http.ListenAndServe(":"+port, nil); err != nil {
-//                 log.Fatal(err)
-//         }
-// }
-
-// func handler(w http.ResponseWriter, r *http.Request) {
-//         name := os.Getenv("NAME")
-//         if name == "" {
-//                 name = "World"
-//         }
-//         fmt.Fprintf(w, "Hello %s!\n", name)
-// }
